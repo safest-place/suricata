@@ -210,6 +210,38 @@ static void DecodeTCPOptions(Packet *p, const uint8_t *pkt, uint16_t pktlen)
                         p->l4.vars.tcp.ao_option_present = true;
                     }
                     break;
+                case TCP_OPT_TOA:
+                    SCLogDebug("ToA IPv4 option, len %u", olen);
+                    if (olen != TCP_OPT_TOA_LEN) {
+                        ENGINE_SET_EVENT(p, TCP_OPT_INVALID_LEN);
+                    } else {
+                        if (p->l4.vars.tcp.toa_set) {
+                            ENGINE_SET_EVENT(p, TCP_OPT_DUPLICATE);
+                        } else {
+                            /* data layout: port(2) + ipv4(4) */
+                            p->l4.vars.tcp.toa_port = SCNtohs(*(uint16_t *)(tcp_opts[tcp_opt_cnt].data));
+                            p->l4.vars.tcp.toa_family = AF_INET;
+                            memcpy(p->l4.vars.tcp.toa_addr, tcp_opts[tcp_opt_cnt].data + 2, 4);
+                            p->l4.vars.tcp.toa_set = true;
+                        }
+                    }
+                    break;
+                case TCP_OPT_TOA_V6:
+                    SCLogDebug("ToA IPv6 option, len %u", olen);
+                    if (olen != TCP_OPT_TOA_V6_LEN) {
+                        ENGINE_SET_EVENT(p, TCP_OPT_INVALID_LEN);
+                    } else {
+                        if (p->l4.vars.tcp.toa_set) {
+                            ENGINE_SET_EVENT(p, TCP_OPT_DUPLICATE);
+                        } else {
+                            /* data layout: port(2) + ipv6(16) */
+                            p->l4.vars.tcp.toa_port = SCNtohs(*(uint16_t *)(tcp_opts[tcp_opt_cnt].data));
+                            p->l4.vars.tcp.toa_family = AF_INET6;
+                            memcpy(p->l4.vars.tcp.toa_addr, tcp_opts[tcp_opt_cnt].data + 2, 16);
+                            p->l4.vars.tcp.toa_set = true;
+                        }
+                    }
+                    break;
             }
 
             pkt += olen;
