@@ -56,8 +56,8 @@
 #define TCP_OPT_EXP2                         0xfe   /* Experimental, could be TFO */
 #define TCP_OPT_MD5                          0x13   /* 19: RFC 2385 TCP MD5 option */
 #define TCP_OPT_AO                           0x1d   /* 29: RFC 5925 TCP AO option */
-#define TCP_OPT_TOA                          0xC8   /* 200: ToA IPv4 real address (LVS) */
-#define TCP_OPT_TOA_V6                       0xC9   /* 201: ToA IPv6 real address (LVS) */
+extern uint8_t g_tcp_opt_toa;      /* TCP option kind for IPv4 ToA (default 200) */
+extern uint8_t g_tcp_opt_toa_v6;   /* TCP option kind for IPv6 ToA (default 201) */
 
 #define TCP_OPT_SACKOK_LEN                   2
 #define TCP_OPT_WS_LEN                       3
@@ -193,6 +193,7 @@ typedef struct TCPVars_
 } TCPVars;
 
 void DecodeTCPRegisterTests(void);
+void DecodeTCPToAConfig(void);
 
 /** -------- Inline functions ------- */
 

@@ -1789,6 +1789,13 @@ decoder:
     enabled: true
     ports: $GENEVE_PORTS # syntax: '[6081, 1234]' or '6081'.
 
+  # ToA (TCP Option Address) for LVS real client IP extraction.
+  # These must match the tcpopt_addr / tcpopt_addr_v6 sysctl values on
+  # the LVS server (default 200 / 201).
+  toa:
+    ipv4-kind: 200  # TCP option kind for IPv4 ToA (range 1-254)
+    ipv6-kind: 201  # TCP option kind for IPv6 ToA (range 1-254)
+
   # maximum number of decoder layers for a packet
   # max-layers: 16
 
