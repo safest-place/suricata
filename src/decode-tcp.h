@@ -56,6 +56,8 @@
 #define TCP_OPT_EXP2                         0xfe   /* Experimental, could be TFO */
 #define TCP_OPT_MD5                          0x13   /* 19: RFC 2385 TCP MD5 option */
 #define TCP_OPT_AO                           0x1d   /* 29: RFC 5925 TCP AO option */
+extern uint8_t g_tcp_opt_toa;      /* TCP option kind for IPv4 ToA (default 200) */
+extern uint8_t g_tcp_opt_toa_v6;   /* TCP option kind for IPv6 ToA (default 201) */
 
 #define TCP_OPT_SACKOK_LEN                   2
 #define TCP_OPT_WS_LEN                       3
@@ -65,6 +67,9 @@
 #define TCP_OPT_SACK_MAX_LEN                 34 /* hdr 2, 4 pair 32= 34 */
 #define TCP_OPT_TFO_MIN_LEN                  4  /* kind, len, 2 bytes cookie: 4 */
 #define TCP_OPT_TFO_MAX_LEN                  18 /* kind, len, 18 */
+
+#define TCP_OPT_TOA_LEN                      8  /* kind, len, port(2), ipv4(4) */
+#define TCP_OPT_TOA_V6_LEN                   20 /* kind, len, port(2), ipv6(16) */
 
 /** Max valid wscale value. */
 #define TCP_WSCALE_MAX                       14
@@ -96,6 +101,7 @@
 #define TCP_HAS_TS(p)     ((p)->l4.vars.tcp.ts_set)
 #define TCP_HAS_MSS(p)    ((p)->l4.vars.tcp.mss_set)
 #define TCP_HAS_TFO(p)    ((p)->l4.vars.tcp.tfo_set)
+#define TCP_HAS_TOA(p)    ((p)->l4.vars.tcp.toa_set)
 
 /** macro for getting the wscale from the packet. */
 #define TCP_GET_WSCALE(p) (p)->l4.vars.tcp.wscale
@@ -104,6 +110,9 @@
 #define TCP_GET_SACK_PTR(p, tcph) ((uint8_t *)(tcph)) + (p)->l4.vars.tcp.sack_offset
 #define TCP_GET_SACK_CNT(p)       (p)->l4.vars.tcp.sack_cnt
 #define TCP_GET_MSS(p)            (p)->l4.vars.tcp.mss
+#define TCP_GET_TOA_ADDR(p)       ((p)->l4.vars.tcp.toa_addr)
+#define TCP_GET_TOA_FAMILY(p)     ((p)->l4.vars.tcp.toa_family)
+#define TCP_GET_TOA_PORT(p)       ((p)->l4.vars.tcp.toa_port)
 
 #define TCP_GET_OFFSET(p)                    TCP_GET_RAW_OFFSET((p)->l4.hdrs.tcph)
 #define TCP_GET_X2(p)                        TCP_GET_RAW_X2((p)->l4.hdrs.tcph)
@@ -170,6 +179,7 @@ typedef struct TCPVars_
     uint8_t tfo_set : 1;
     uint8_t wscale_set : 1;
     uint8_t sack_set : 1;
+    uint8_t toa_set : 1;     /**< ToA (TCP Option Address) present (LVS real addr) */
     uint8_t wscale;
     uint8_t sack_cnt; /**< number of sack records */
     uint16_t mss;     /**< MSS value in host byte order */
@@ -177,9 +187,13 @@ typedef struct TCPVars_
     uint32_t ts_val;    /* host-order */
     uint32_t ts_ecr;    /* host-order */
     uint16_t sack_offset; /**< offset relative to tcp header start */
+    uint16_t toa_port;    /**< real source port from ToA, host byte order */
+    uint8_t toa_family;   /**< AF_INET or AF_INET6 for ToA address */
+    uint8_t toa_addr[16]; /**< real source address from ToA (network order, 4 or 16 bytes) */
 } TCPVars;
 
 void DecodeTCPRegisterTests(void);
+void DecodeTCPToAConfig(void);
 
 /** -------- Inline functions ------- */
 

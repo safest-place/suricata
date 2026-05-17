@@ -34,14 +34,38 @@
 #include "decode-tcp.h"
 #include "decode.h"
 #include "decode-events.h"
+#include "conf.h"
 #include "util-unittest.h"
 #include "util-debug.h"
 #include "util-optimize.h"
 #include "flow.h"
 
+uint8_t g_tcp_opt_toa = 200;
+uint8_t g_tcp_opt_toa_v6 = 201;
+
 static inline uint16_t DecodeTCPGetU16(const uint8_t *d)
 {
     return (uint16_t)(((uint16_t)d[0] << 8) | (uint16_t)d[1]);
+}
+
+void DecodeTCPToAConfig(void)
+{
+    intmax_t val = 0;
+    if (SCConfGetInt("decoder.toa.ipv4-kind", &val) == 1) {
+        if (val < 1 || val > 254) {
+            SCLogWarning("Invalid decoder.toa.ipv4-kind value %" PRIiMAX ", using default 200", val);
+        } else {
+            g_tcp_opt_toa = (uint8_t)val;
+        }
+    }
+    if (SCConfGetInt("decoder.toa.ipv6-kind", &val) == 1) {
+        if (val < 1 || val > 254) {
+            SCLogWarning("Invalid decoder.toa.ipv6-kind value %" PRIiMAX ", using default 201", val);
+        } else {
+            g_tcp_opt_toa_v6 = (uint8_t)val;
+        }
+    }
+    SCLogInfo("ToA decoder configured: ipv4-kind=%u, ipv6-kind=%u", g_tcp_opt_toa, g_tcp_opt_toa_v6);
 }
 
 static void DecodeTCPOptions(Packet *p, const uint8_t *pkt, uint16_t pktlen)
@@ -81,6 +105,38 @@ static void DecodeTCPOptions(Packet *p, const uint8_t *pkt, uint16_t pktlen)
             tcp_opts[tcp_opt_cnt].type = type;
             tcp_opts[tcp_opt_cnt].len  = olen;
             tcp_opts[tcp_opt_cnt].data = (olen > 2) ? (pkt+2) : NULL;
+
+            /* ToA options have runtime-configurable kind values, so they
+             * cannot use switch case labels. Check before the switch. */
+            if (type == g_tcp_opt_toa) {
+                if (olen != TCP_OPT_TOA_LEN) {
+                    ENGINE_SET_EVENT(p, TCP_OPT_INVALID_LEN);
+                } else {
+                    if (p->l4.vars.tcp.toa_set) {
+                        ENGINE_SET_EVENT(p, TCP_OPT_DUPLICATE);
+                    } else {
+                        /* data layout: port(2) + ipv4(4) */
+                        p->l4.vars.tcp.toa_port = SCNtohs(*(uint16_t *)(tcp_opts[tcp_opt_cnt].data));
+                        p->l4.vars.tcp.toa_family = AF_INET;
+                        memcpy(p->l4.vars.tcp.toa_addr, tcp_opts[tcp_opt_cnt].data + 2, 4);
+                        p->l4.vars.tcp.toa_set = true;
+                    }
+                }
+            } else if (type == g_tcp_opt_toa_v6) {
+                if (olen != TCP_OPT_TOA_V6_LEN) {
+                    ENGINE_SET_EVENT(p, TCP_OPT_INVALID_LEN);
+                } else {
+                    if (p->l4.vars.tcp.toa_set) {
+                        ENGINE_SET_EVENT(p, TCP_OPT_DUPLICATE);
+                    } else {
+                        /* data layout: port(2) + ipv6(16) */
+                        p->l4.vars.tcp.toa_port = SCNtohs(*(uint16_t *)(tcp_opts[tcp_opt_cnt].data));
+                        p->l4.vars.tcp.toa_family = AF_INET6;
+                        memcpy(p->l4.vars.tcp.toa_addr, tcp_opts[tcp_opt_cnt].data + 2, 16);
+                        p->l4.vars.tcp.toa_set = true;
+                    }
+                }
+            } else
 
             /* we are parsing the most commonly used opts to prevent
              * us from having to walk the opts list for these all the
