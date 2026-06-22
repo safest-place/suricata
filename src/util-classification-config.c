@@ -136,6 +136,7 @@ static FILE *SCClassConfInitContextAndLocalResources(DetectEngineCtx *de_ctx, FI
         }
     }
 
+    DEBUG_VALIDATE_MARK_SANITIZED(fd);
     return fd;
 }
 
@@ -160,13 +161,13 @@ static const char *SCClassConfGetConfFilename(const DetectEngineCtx *de_ctx)
 
         /* try loading prefix setting, fall back to global if that
          * fails. */
-        if (SCConfGet(config_value, &log_filename) != 1) {
-            if (SCConfGet("classification-file", &log_filename) != 1) {
+        if (SCConfGetNonNull(config_value, &log_filename) != 1) {
+            if (SCConfGetNonNull("classification-file", &log_filename) != 1) {
                 log_filename = (char *)SC_CLASS_CONF_DEF_CONF_FILEPATH;
             }
         }
     } else {
-        if (SCConfGet("classification-file", &log_filename) != 1) {
+        if (SCConfGetNonNull("classification-file", &log_filename) != 1) {
             log_filename = (char *)SC_CLASS_CONF_DEF_CONF_FILEPATH;
         }
     }

@@ -121,6 +121,11 @@ typedef struct AppLayerParserState_ AppLayerParserState;
 /** next packet in toserver direction will act on updated app-layer state */
 #define FLOW_TS_APP_UPDATE_NEXT BIT_U64(31)
 
+/** Flow action issued by firewall */
+#define FLOW_ACTION_BY_FIREWALL BIT_U64(32)
+/** Flow action issued by exception policy */
+#define FLOW_ACTION_BY_EXCEPTION_POLICY BIT_U64(33)
+
 /* File flags */
 
 #define FLOWFILE_INIT                   0
@@ -130,8 +135,9 @@ typedef struct AppLayerParserState_ AppLayerParserState;
 #define FLOWFILE_NO_MAGIC_TC            BIT_U16(1)
 
 /** even if the flow has files, don't store 'm */
-#define FLOWFILE_NO_STORE_TS            BIT_U16(2)
-#define FLOWFILE_NO_STORE_TC            BIT_U16(3)
+// defined in rust
+// #define FLOWFILE_NO_STORE_TS            BIT_U16(2)
+// #define FLOWFILE_NO_STORE_TC            BIT_U16(3)
 /** no md5 on files in this flow */
 #define FLOWFILE_NO_MD5_TS              BIT_U16(4)
 #define FLOWFILE_NO_MD5_TC              BIT_U16(5)
@@ -147,8 +153,9 @@ typedef struct AppLayerParserState_ AppLayerParserState;
 // vacancy(2)
 
 /** store files in the flow */
-#define FLOWFILE_STORE_TS BIT_U16(12)
-#define FLOWFILE_STORE_TC BIT_U16(13)
+// defined in rust
+// #define FLOWFILE_STORE_TS BIT_U16(12)
+// #define FLOWFILE_STORE_TC BIT_U16(13)
 
 #define FLOWFILE_NONE_TS                                                                           \
     (FLOWFILE_NO_MAGIC_TS | FLOWFILE_NO_STORE_TS | FLOWFILE_NO_MD5_TS | FLOWFILE_NO_SHA1_TS |      \

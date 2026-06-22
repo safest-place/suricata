@@ -140,7 +140,7 @@ jobs:
                 texlive-capt-of \
                 texlive-needspace
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: ./.github/actions/install-cbindgen
       # Download and extract dependency archives created during prep
@@ -339,7 +339,7 @@ jobs:
       - run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
       - run: cargo install bindgen-cli --version 0.66.0
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: ./.github/actions/install-cbindgen
       # Download and extract dependency archives created during prep
@@ -380,15 +380,7 @@ jobs:
       # especially without debug feature
       - run: cargo clippy
         working-directory: rust
-      - run: cargo fmt --check
-        working-directory: rust/suricatactl
-      - run: cargo fmt --check
-        working-directory: rust/suricatasc
-      - run: cargo fmt --check
-        working-directory: rust/sys
-      - run: cargo fmt --check
-        working-directory: rust/derive
-      - run: rustfmt --check rust/src/dns/*.rs
+      - run: ./scripts/rustfmt.sh
       - name: Check if Cargo.lock.in is up to date
         run: |
           cp rust/Cargo.lock rust/Cargo.lock.in
@@ -398,12 +390,6 @@ jobs:
               echo "::error ::Cargo.lock.in needs to be updated"
               exit 1
           fi
-      # does not work in other subdirectories for now
-      - run: cargo fmt --check
-        working-directory: rust/htp
-      # The ffi crate is cargo fmt clean.
-      - run: cargo fmt --check
-        working-directory: rust/ffi
 
       - run: make -j ${{ env.CPUS }} distcheck
         env:
@@ -546,7 +532,7 @@ jobs:
       - run: rustup component add rustfmt
       - run: rustup component add clippy
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
 
       - uses: ./.github/actions/install-cbindgen
@@ -585,7 +571,7 @@ jobs:
       matrix:
         container:
           - almalinux:9
-          - fedora:43
+          - fedora:44
     env:
       skip: false
     steps:
@@ -636,11 +622,11 @@ jobs:
       # We need a step for each RPM upload as we can't use the
       # container name directly in an artifact, as artifacts can't
       # have ':' in the name.
-      - if: ${{ matrix.container == 'fedora:43' &&  env.skip != 'true' }}
+      - if: ${{ matrix.container == 'fedora:44' &&  env.skip != 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         name: Uploading RPMs
         with:
-          name: rpms-fedora-43
+          name: rpms-fedora-44
           path: suricata-rpms/devel/rpms
       - if: ${{ matrix.container == 'almalinux:9' && env.skip != 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -705,7 +691,7 @@ jobs:
                 which \
                 zlib-devel
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
 
       - uses: ./.github/actions/install-cbindgen
@@ -837,10 +823,10 @@ jobs:
       - run: make clean
       - run: make -j ${{ env.CPUS }}
 
-  fedora-43-sv-codecov:
-    name: Fedora 43 (Suricata Verify codecov)
+  fedora-44-sv-codecov:
+    name: Fedora 44 (Suricata Verify codecov)
     runs-on: ubuntu-latest
-    container: fedora:43
+    container: fedora:44
     needs: [prepare-deps, prepare-cbindgen]
     steps:
 
@@ -900,7 +886,7 @@ jobs:
       - name: Install Rust
         run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain 1.86.0 -y
       - run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - uses: ./.github/actions/install-cbindgen
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -932,17 +918,17 @@ jobs:
           name: coverage-lcov-${{ github.job }}
           path: coverage.lcov
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
         with:
           fail_ci_if_error: false
           files: coverage.lcov
           flags: suricata-verify
 
   # Fedora build using Clang.
-  fedora-43-clang:
-    name: Fedora 43 (clang, debug, asan, wshadow, rust-strict, systemd)
+  fedora-44-clang:
+    name: Fedora 44 (clang, debug, asan, wshadow, rust-strict, systemd)
     runs-on: ubuntu-latest
-    container: fedora:43
+    container: fedora:44
     needs: [prepare-deps, prepare-cbindgen]
     steps:
 
@@ -998,7 +984,7 @@ jobs:
                 sudo \
                 which \
                 zlib-devel
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - uses: ./.github/actions/install-cbindgen
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -1040,10 +1026,10 @@ jobs:
       - run: src/suricata --build-info | grep -E "Systemd support:\s+yes" &> /dev/null
 
   # Fedora build using GCC.
-  fedora-43-gcc:
-    name: Fedora 43 (gcc, debug, flto, asan, wshadow, rust-strict)
+  fedora-44-gcc:
+    name: Fedora 44 (gcc, debug, flto, asan, wshadow, rust-strict)
     runs-on: ubuntu-latest
-    container: fedora:43
+    container: fedora:44
     needs: [prepare-deps, prepare-cbindgen]
     steps:
 
@@ -1095,7 +1081,7 @@ jobs:
                 vectorscan-devel \
                 which \
                 zlib-devel
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: ./.github/actions/install-cbindgen
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -1138,9 +1124,9 @@ jobs:
   # Also ja3 and ja4 are disabled to run SV tests that require
   # the absence of these features
   fedora-non-root:
-    name: Fedora (non-root, debug, clang, asan, wshadow, rust-strict, no-ja)
+    name: Fedora 44 (non-root, debug, clang, asan, wshadow, rust-strict, no-ja)
     runs-on: ubuntu-latest
-    container: fedora:43
+    container: fedora:44
     needs: [prepare-deps, prepare-cbindgen]
     steps:
       - name: Determine number of CPUs
@@ -1185,7 +1171,7 @@ jobs:
                 which \
                 zlib-devel
       - run: adduser suricata
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - uses: ./.github/actions/install-cbindgen
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -1285,7 +1271,7 @@ jobs:
                 sudo \
                 which \
                 zlib-devel
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -1396,7 +1382,7 @@ jobs:
                 software-properties-common \
                 zlib1g \
                 zlib1g-dev
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -1413,9 +1399,9 @@ jobs:
       - run: make install-headers
       - run: make install-library
 
-      - run: TZ="UTC" ./src/suricata -u -U LogCustomFormatTest01
-      - run: TZ="Brazil/East" ./src/suricata -u -U LogCustomFormatTest01
-      - run: TZ="Saskatchewan/Regina" ./src/suricata -u -U LogCustomFormatTest01
+      - run: TZ="UTC" ./src/suricata -u -U CreateFormattedTimeStringTest01
+      - run: TZ="Brazil/East" ./src/suricata -u -U CreateFormattedTimeStringTest01
+      - run: TZ="Saskatchewan/Regina" ./src/suricata -u -U CreateFormattedTimeStringTest01
 
   ubuntu-24-04-rust-vars:
     name: Ubuntu 24.04 (RUSTC+CARGO vars)
@@ -1474,7 +1460,7 @@ jobs:
                 software-properties-common \
                 zlib1g \
                 zlib1g-dev
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -1550,7 +1536,7 @@ jobs:
                 exuberant-ctags \
                 curl \
                 dpdk-dev
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -1628,13 +1614,24 @@ jobs:
           CARGO_INCREMENTAL: 0
       - run: llvm-profdata-19 merge -o ct.profdata /tmp/ct.profraw
       - run: llvm-cov-19 export $(find rust/target/debug/deps/ -type f -regex 'rust/target/debug/deps/suricata\-[a-z0-9]+$') -instr-profile=ct.profdata -format=lcov --ignore-filename-regex="^/(root|usr|rustc|github)/.*" --skip-branches >> coverage.lcov
+      - run: |
+          cargo build --manifest-path examples/plugins/rust/Cargo.toml
+          rm -f /tmp/eve.json /tmp/rust-plugin-*.profraw
+          ./src/suricata -S /dev/null --plugin ./examples/plugins/rust/target/debug/libsuricata_rust_plugin.so --runmode=single -l /tmp -c suricata.yaml -k none -r qa/docker/pcaps/tls.pcap
+          test "$(jq -c 'select(.foobar and .rust_wrapped)' /tmp/eve.json | wc -l)" != "0"
+          llvm-profdata-19 merge -o rust-plugin.profdata /tmp/rust-plugin-*.profraw
+          llvm-cov-19 export ./examples/plugins/rust/target/debug/libsuricata_rust_plugin.so -instr-profile=rust-plugin.profdata -format=lcov --ignore-filename-regex="^/(root|usr|rustc|github)/.*" --skip-branches >> coverage.lcov
+        env:
+          RUSTFLAGS: "-C instrument-coverage"
+          CARGO_INCREMENTAL: 0
+          LLVM_PROFILE_FILE: "/tmp/rust-plugin-%p-%m.profraw"
       - name: Upload coverage.lcov artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: coverage-lcov-${{ github.job }}
           path: coverage.lcov
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
         with:
           fail_ci_if_error: false
           files: coverage.lcov
@@ -1706,7 +1703,7 @@ jobs:
       # specific version to match up to the llvm version in ubuntu below
       - name: Install Rust
         run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain 1.85.1 -y
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -1746,7 +1743,7 @@ jobs:
           name: coverage-lcov-${{ github.job }}
           path: coverage.lcov
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
         with:
           fail_ci_if_error: false
           files: coverage.lcov
@@ -1818,7 +1815,7 @@ jobs:
       # specific version to match up to the llvm version in ubuntu below
       - name: Install Rust
         run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain 1.85.1 -y
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -1897,7 +1894,7 @@ jobs:
           name: coverage-lcov-${{ github.job }}
           path: coverage.lcov
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
         with:
           fail_ci_if_error: false
           files: coverage.lcov
@@ -1968,7 +1965,7 @@ jobs:
                 time \
                 wget \
                 dpdk-dev
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -2059,7 +2056,7 @@ jobs:
                 iproute2 \
                 iptables \
                 tshark
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: prep
@@ -2141,7 +2138,7 @@ jobs:
           name: coverage-lcov-${{ github.job }}
           path: coverage.lcov
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
         with:
           fail_ci_if_error: true
           files: coverage.lcov
@@ -2214,7 +2211,7 @@ jobs:
                 time \
                 wget \
                 dpdk-dev
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -2321,7 +2318,7 @@ jobs:
       # packaged Rust version is too old for coverage, so get from rustup
       - name: Install Rust
         run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain 1.85.1 -y
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -2359,7 +2356,7 @@ jobs:
           name: coverage-lcov-${{ github.job }}
           path: coverage.lcov
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
         with:
           fail_ci_if_error: false
           files: coverage.lcov
@@ -2420,7 +2417,7 @@ jobs:
                 zlib1g-dev \
                 exuberant-ctags \
                 dpdk-dev
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -2573,7 +2570,7 @@ jobs:
                 zlib1g \
                 zlib1g-dev \
                 exuberant-ctags
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -2652,7 +2649,7 @@ jobs:
                 zlib1g \
                 zlib1g-dev
       - run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -2749,7 +2746,7 @@ jobs:
           make -j ${{ env.CPUS }}
           sudo make install
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -2878,7 +2875,7 @@ jobs:
           ninja -C build install
           ldconfig
           cd $HOME
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -2960,7 +2957,7 @@ jobs:
               zlib1g-dev \
               clang \
               libxdp-dev
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -3052,7 +3049,7 @@ jobs:
               zlib1g-dev \
               clang \
               libxdp-dev
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -3140,7 +3137,7 @@ jobs:
               texlive-latex-extra \
               zlib1g \
               zlib1g-dev
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -3223,7 +3220,7 @@ jobs:
               texlive-latex-extra \
               zlib1g \
               zlib1g-dev
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -3302,7 +3299,7 @@ jobs:
       - name: Install Rust
         run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain $RUST_VERSION_KNOWN -y
       - run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -3351,7 +3348,7 @@ jobs:
           rust \
           xz
       - run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - name: Downloading prep archive
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -3387,13 +3384,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: [prepare-deps]
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - name: Downloading prep archive
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: prep
           path: prep
-      - uses: vmactions/freebsd-vm@d1e65811565151536c0c894fff74f06351ed26e6
+      - uses: vmactions/freebsd-vm@a6de9343ef5747433d9c25784c90e84998b9d69a
         with:
           release: "15.0"
           arch: x86_64
@@ -3452,7 +3449,7 @@ jobs:
       # preinstalled one to be picked up by configure
       - name: cbindgen
         run: cargo install --root /usr --force --debug --version 0.24.3 cbindgen
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -3509,7 +3506,7 @@ jobs:
       # preinstalled one to be picked up by configure
       - name: cbindgen
         run: cargo install --root /usr --force --debug --version 0.24.3 cbindgen
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -3567,7 +3564,7 @@ jobs:
             mingw-w64-ucrt-x86_64-rust
             mingw-w64-ucrt-x86_64-toolchain
             unzip
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -3614,7 +3611,7 @@ jobs:
       # preinstalled one to be picked up by configure
       - name: cbindgen
         run: cargo install --root /usr --force --debug --version 0.24.3 cbindgen
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - run: git config --global --add safe.directory /__w/suricata/suricata
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:

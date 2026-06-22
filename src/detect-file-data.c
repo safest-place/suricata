@@ -91,8 +91,8 @@ DetectFileHandlerProtocol_t al_protocols[ALPROTO_WITHFILES_MAX] = {
             .to_server_progress = HTP_REQUEST_PROGRESS_BODY },
     { .alproto = ALPROTO_HTTP2,
             .direction = SIG_FLAG_TOSERVER | SIG_FLAG_TOCLIENT,
-            .to_client_progress = HTTP2StateDataServer,
-            .to_server_progress = HTTP2StateDataClient },
+            .to_client_progress = HTTP2ProgData,
+            .to_server_progress = HTTP2ProgData },
     { .alproto = ALPROTO_SMTP, .direction = SIG_FLAG_TOSERVER }, { .alproto = ALPROTO_UNKNOWN }
 };
 
@@ -185,6 +185,9 @@ static void SetupDetectEngineConfig(DetectEngineCtx *de_ctx) {
     }
 
     /* add protocol specific settings here */
+
+    /* help scan-build understand the protocol specific logic is within the array bounds. */
+    DEBUG_VALIDATE_BUG_ON(ALPROTO_SMTP >= g_alproto_max);
 
     /* SMTP */
     de_ctx->filedata_config[ALPROTO_SMTP].content_limit = smtp_config.content_limit;

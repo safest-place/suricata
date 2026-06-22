@@ -97,15 +97,13 @@ static DefragTracker *DefragTrackerAlloc(void)
     (void) SC_ATOMIC_ADD(defrag_memuse, sizeof(DefragTracker));
 
     DefragTracker *dt = SCCalloc(1, sizeof(DefragTracker));
-    if (unlikely(dt == NULL))
-        goto error;
-
+    if (unlikely(dt == NULL)) {
+        (void)SC_ATOMIC_SUB(defrag_memuse, sizeof(DefragTracker));
+        return NULL;
+    }
     SCMutexInit(&dt->lock, NULL);
     SC_ATOMIC_INIT(dt->use_cnt);
     return dt;
-
-error:
-    return NULL;
 }
 
 static void DefragTrackerFree(DefragTracker *dt)
@@ -190,7 +188,7 @@ void DefragInitConfig(bool quiet)
 
     uint64_t defrag_memcap;
     /** set config values for memcap, prealloc and hash_size */
-    if ((SCConfGet("defrag.memcap", &conf_val)) == 1) {
+    if ((SCConfGetNonNull("defrag.memcap", &conf_val)) == 1) {
         if (ParseSizeStringU64(conf_val, &defrag_memcap) < 0) {
             SCLogError("Error parsing defrag.memcap "
                        "from conf file - %s.  Killing engine",
@@ -200,7 +198,7 @@ void DefragInitConfig(bool quiet)
             SC_ATOMIC_SET(defrag_config.memcap, defrag_memcap);
         }
     }
-    if ((SCConfGet("defrag.hash-size", &conf_val)) == 1) {
+    if ((SCConfGetNonNull("defrag.hash-size", &conf_val)) == 1) {
         if (StringParseUint32(&configval, 10, strlen(conf_val),
                                     conf_val) > 0) {
             defrag_config.hash_size = configval;
@@ -209,7 +207,7 @@ void DefragInitConfig(bool quiet)
         }
     }
 
-    if ((SCConfGet("defrag.trackers", &conf_val)) == 1) {
+    if ((SCConfGetNonNull("defrag.trackers", &conf_val)) == 1) {
         if (StringParseUint32(&configval, 10, strlen(conf_val),
                                     conf_val) > 0) {
             defrag_config.prealloc = configval;
@@ -252,7 +250,7 @@ void DefragInitConfig(bool quiet)
                   (uintmax_t)sizeof(DefragTrackerHashRow));
     }
 
-    if ((SCConfGet("defrag.prealloc", &conf_val)) == 1) {
+    if ((SCConfGetNonNull("defrag.prealloc", &conf_val)) == 1) {
         if (SCConfValIsTrue(conf_val)) {
             /* pre allocate defrag trackers */
             for (i = 0; i < defrag_config.prealloc; i++) {
@@ -440,9 +438,13 @@ static inline int DefragTrackerCompare(DefragTracker *t, Packet *p)
 {
     uint32_t id;
     if (PacketIsIPv4(p)) {
+        if (t->af != AF_INET)
+            return 0;
         const IPV4Hdr *ip4h = PacketGetIPv4(p);
         id = (uint32_t)IPV4_GET_RAW_IPID(ip4h);
     } else {
+        if (t->af != AF_INET6)
+            return 0;
         id = IPV6_EXTHDR_GET_FH_ID(p);
     }
 

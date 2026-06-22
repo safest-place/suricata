@@ -583,6 +583,7 @@ static void SetBpfStringFromFile(char *filename)
         exit(EXIT_FAILURE);
     }
     fclose(fp);
+    DEBUG_VALIDATE_BUG_ON(nm >= bpf_len); // help scan-build
     bpf_filter[nm] = '\0';
 
     if(strlen(bpf_filter) > 0) {
@@ -860,6 +861,9 @@ static void PrintBuildInfo(void)
     strlcat(features, "RUST ", sizeof(features));
 #if defined(SC_ADDRESS_SANITIZER)
     strlcat(features, "ASAN ", sizeof(features));
+#endif
+#if defined(FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION)
+    strlcat(features, "FUZZ ", sizeof(features));
 #endif
 #if defined(HAVE_POPCNT64)
     strlcat(features, "POPCNT64 ", sizeof(features));
@@ -2236,7 +2240,7 @@ static int MayDaemonize(SCInstance *suri)
     if (suri->daemon == 1 && suri->pid_filename == NULL) {
         const char *pid_filename;
 
-        if (SCConfGet("pid-file", &pid_filename) == 1) {
+        if (SCConfGetNonNull("pid-file", &pid_filename) == 1) {
             SCLogInfo("Use pid file %s from config file.", pid_filename);
         } else {
             pid_filename = DEFAULT_PID_FILENAME;
@@ -2517,11 +2521,16 @@ int SCStartInternalRunMode(int argc, char **argv)
     return TM_ECODE_OK;
 }
 
-int SCFinalizeRunMode(void)
+int SCFinalizeRunMode(int argc)
 {
     SCInstance *suri = &suricata;
     switch (suri->run_mode) {
         case RUNMODE_UNKNOWN:
+            /* Only warn if user passed arguments */
+            if (argc > 1) {
+                SCLogError("Please specify a runmode or capture option. "
+                           "Use --list-runmodes to see available runmodes.");
+            }
             PrintUsage(suri->progname);
             return TM_ECODE_FAILED;
         default:
@@ -2596,7 +2605,7 @@ static int ConfigGetCaptureValue(SCInstance *suri)
     /* Pull the default packet size from the config, if not found fall
      * back on a sane default. */
     const char *temp_default_packet_size;
-    if ((SCConfGet("default-packet-size", &temp_default_packet_size)) != 1) {
+    if ((SCConfGetNonNull("default-packet-size", &temp_default_packet_size)) != 1) {
         int lthread;
         int nlive;
         int strip_trailing_plus = 0;
@@ -2733,7 +2742,7 @@ static void PostConfLoadedSetupHostMode(void)
 {
     const char *hostmode = NULL;
 
-    if (SCConfGet("host-mode", &hostmode) == 1) {
+    if (SCConfGetNonNull("host-mode", &hostmode) == 1) {
         if (!strcmp(hostmode, "router")) {
             g_engine_host_mode = ENGINE_HOST_IS_ROUTER;
         } else if (!strcmp(hostmode, "bridge")) {
@@ -2828,7 +2837,7 @@ int PostConfLoadedSetup(SCInstance *suri)
 
     if (suri->checksum_validation == -1) {
         const char *cv = NULL;
-        if (SCConfGet("capture.checksum-validation", &cv) == 1) {
+        if (SCConfGetNonNull("capture.checksum-validation", &cv) == 1) {
             if (strcmp(cv, "none") == 0) {
                 suri->checksum_validation = 0;
             } else if (strcmp(cv, "all") == 0) {
@@ -2897,7 +2906,7 @@ int PostConfLoadedSetup(SCInstance *suri)
     /* Suricata will use this umask if provided. By default it will use the
        umask passed on from the shell. */
     const char *custom_umask;
-    if (SCConfGet("umask", &custom_umask) == 1) {
+    if (SCConfGetNonNull("umask", &custom_umask) == 1) {
         uint16_t mask;
         if (StringParseUint16(&mask, 8, (uint16_t)strlen(custom_umask), custom_umask) > 0) {
             umask((mode_t)mask);
@@ -3083,6 +3092,8 @@ int InitGlobal(void)
 
 void SuricataPreInit(const char *progname)
 {
+    UtilCpuEnableSparcMisalignEmulation();
+
     SCInstanceInit(&suricata, progname);
 
     if (InitGlobal() != 0) {
@@ -3217,7 +3228,7 @@ void SuricataPostInit(void)
 #endif
 
     if (limit_nproc) {
-#if defined(HAVE_SYS_RESOURCE_H)
+#if defined(HAVE_SYS_RESOURCE_H) && defined(RLIMIT_NPROC)
 #ifdef linux
         if (geteuid() == 0) {
             SCLogWarning("setrlimit has no effect when running as root.");

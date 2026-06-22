@@ -22,8 +22,8 @@ use nom7::number::streaming::be_u32;
 use nom7::{Err, IResult};
 
 use crate::direction::Direction;
-use crate::nfs::nfs::*;
 use crate::flow::Flow;
+use crate::nfs::nfs::*;
 use crate::nfs::nfs4_records::*;
 use crate::nfs::nfs_records::*;
 use crate::nfs::rpc_records::*;
@@ -317,7 +317,7 @@ impl NFSState {
             };
         }
 
-        self.requestmap.insert(r.hdr.xid, xidmap);
+        self.requestmap.put(r.hdr.xid, xidmap);
     }
 
     fn compound_response<'b>(
@@ -376,11 +376,13 @@ impl NFSState {
                 }
                 Nfs4ResponseContent::GetFH(_s, Some(ref rd)) if insert_filename_with_getfh => {
                     self.namemap
-                        .insert(rd.value.to_vec(), xidmap.file_name.to_vec());
+                        .put(rd.value.to_vec(), xidmap.file_name.to_vec());
                 }
-                Nfs4ResponseContent::PutRootFH(s) if s == NFS4_OK && xidmap.file_name.is_empty() => {
-                        xidmap.file_name = b"<mount_root>".to_vec();
-                        SCLogDebug!("filename {:?}", xidmap.file_name);
+                Nfs4ResponseContent::PutRootFH(s)
+                    if s == NFS4_OK && xidmap.file_name.is_empty() =>
+                {
+                    xidmap.file_name = b"<mount_root>".to_vec();
+                    SCLogDebug!("filename {:?}", xidmap.file_name);
                 }
                 _ => {}
             }
@@ -388,11 +390,19 @@ impl NFSState {
 
         if main_opcode_status_set {
             let resp_handle = Vec::new();
-            self.mark_response_tx_done(flow, r.hdr.xid, r.reply_state, main_opcode_status, &resp_handle);
+            self.mark_response_tx_done(
+                flow,
+                r.hdr.xid,
+                r.reply_state,
+                main_opcode_status,
+                &resp_handle,
+            );
         }
     }
 
-    pub fn process_reply_record_v4(&mut self, flow: *mut Flow, r: &RpcReplyPacket, xidmap: &mut NFSRequestXidMap) {
+    pub fn process_reply_record_v4(
+        &mut self, flow: *mut Flow, r: &RpcReplyPacket, xidmap: &mut NFSRequestXidMap,
+    ) {
         if xidmap.procedure == NFSPROC4_COMPOUND {
             let mut data = r.prog_data;
 

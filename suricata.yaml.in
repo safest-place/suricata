@@ -345,6 +345,7 @@ outputs:
         - quic
         - ldap
         - pop3
+        - llmnr
         #- modbus
         - arp:
             enabled: no        # Many events can be logged. Disabled by default
@@ -1032,6 +1033,8 @@ app-layer:
       #max-reassembly-size: 102400
       # Maximum number of frames per tx
       #max-frames: 65536
+      # Maximum data to decompress if the decompress ratio is too high
+      #compression-bomb-limit: 1MiB
     smtp:
       enabled: yes
       raw-extraction: no
@@ -1275,7 +1278,7 @@ app-layer:
       enabled: yes
 
     sip:
-      #enabled: yes
+      enabled: yes
 
     ldap:
       tcp:
@@ -1288,9 +1291,17 @@ app-layer:
           dp: 389, 3268
       # Maximum number of live LDAP transactions per flow
       # max-tx: 1024
+      # Maximum number of responses per LDAP transaction
+      # max-responses: 1024
 
     mdns:
       enabled: yes
+
+    llmnr:
+      enabled: yes
+      detection-ports:
+        dp: 5355
+        sp: 5355
 
 # Limit for the maximum number of asn1 frames to decode (default 256)
 asn1-max-frames: 256
@@ -2375,6 +2386,20 @@ firewall:
   # in order and rules are applied in that order (per state, see docs)
   #rule-files:
   #  - firewall.rules
+  #
+
+  # Default policies
+  #
+  # Choose a default policy for each firewall hook.
+  # It is also possible to specify policies by app-layer protocol.
+  # DNS example: Drop and alert on all DNS requests that are not allowed in firewall.rules, accept all responses.
+  #
+  #policies:
+  #  packet-filter: ["drop:packet"]
+  #  dns:
+  #    request-started: ["accept:hook"]
+  #    request-complete: ["drop:flow", "alert"]
+  #    response-started: ["accept:tx"]
 
 ##
 ## Include other configs

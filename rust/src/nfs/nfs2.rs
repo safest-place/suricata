@@ -100,10 +100,12 @@ impl NFSState {
         }
 
         SCLogDebug!("NFSv2: TS creating xidmap {}", r.hdr.xid);
-        self.requestmap.insert(r.hdr.xid, xidmap);
+        self.requestmap.put(r.hdr.xid, xidmap);
     }
 
-    pub fn process_reply_record_v2(&mut self, flow: *mut Flow, r: &RpcReplyPacket, xidmap: &NFSRequestXidMap) {
+    pub fn process_reply_record_v2(
+        &mut self, flow: *mut Flow, r: &RpcReplyPacket, xidmap: &NFSRequestXidMap,
+    ) {
         let mut nfs_status = 0;
         let resp_handle = Vec::new();
 

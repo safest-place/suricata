@@ -264,7 +264,7 @@ int main(int argc, char **argv)
     SCRunmodeSet(RUNMODE_LIB);
 
     /* Validate/finalize the runmode. */
-    if (SCFinalizeRunMode() != TM_ECODE_OK) {
+    if (SCFinalizeRunMode(suricata_argc) != TM_ECODE_OK) {
         exit(EXIT_FAILURE);
     }
 
@@ -306,7 +306,13 @@ int main(int argc, char **argv)
      * ThreadVars will be ready. */
     SuricataInit();
 
-    SCDetectEngineRegisterRateFilterCallback(RateFilterCallback, NULL);
+    if (DetectEngineEnabled()) {
+        if (!SCDetectEngineRegisterRateFilterCallback(RateFilterCallback, NULL)) {
+            SCLogWarning("rate filter callback registration failed");
+        }
+    } else {
+        SCLogWarning("detection engine not enabled, rate filter callback not registered");
+    }
 
     /* Spawn our worker threads, one for each interface. */
     pthread_t workers[MAX_INTERFACES];

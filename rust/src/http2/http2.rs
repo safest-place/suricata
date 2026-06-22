@@ -22,7 +22,7 @@ use super::range;
 
 use super::range::{SCHTPFileCloseHandleRange, SCHttpRangeFreeBlock};
 use crate::applayer::{self, *};
-use crate::conf::conf_get;
+use crate::conf::{conf_get, get_memval};
 use crate::core::*;
 use crate::direction::Direction;
 use crate::dns::dns::DnsVariant;
@@ -39,6 +39,7 @@ use std::collections::VecDeque;
 use std::ffi::CString;
 use std::fmt;
 use std::io;
+use suricata_sys::sys::AppProtoEnum::ALPROTO_HTTP1;
 use suricata_sys::sys::{
     AppLayerParserState, AppProto, HttpRangeContainerBlock, SCAppLayerForceProtocolChange,
     SCAppLayerParserConfParserEnabled, SCAppLayerParserRegisterLogger,
@@ -80,6 +81,7 @@ pub static mut HTTP2_MAX_TABLESIZE: u32 = 65536; // 0x10000
 static mut HTTP2_MAX_REASS: usize = 102400;
 static mut HTTP2_MAX_STREAMS: usize = 4096; // 0x1000
 static mut HTTP2_MAX_FRAMES: usize = 65536;
+pub(super) static mut HTTP2_COMPRESSION_BOMB_LIMIT: u64 = 1_048_576;
 
 #[derive(AppLayerFrameType)]
 pub enum Http2FrameType {
@@ -126,19 +128,14 @@ pub enum HTTP2FrameTypeData {
 
 #[repr(u8)]
 #[derive(Copy, Clone, PartialOrd, PartialEq, Eq, Debug)]
-pub enum HTTP2TransactionState {
-    HTTP2StateIdle = 0,
-    HTTP2StateOpen = 1,
-    HTTP2StateReserved = 2,
-    HTTP2StateDataClient = 3,
-    HTTP2StateHalfClosedClient = 4,
-    HTTP2StateDataServer = 5,
-    HTTP2StateHalfClosedServer = 6,
-    HTTP2StateClosed = 7,
+pub enum HTTP2TxProgress {
+    HTTP2ProgStart = 0,
+    HTTP2ProgHeaders = 1,
+    HTTP2ProgData = 2,
+    HTTP2ProgClosed = 3,
+    HTTP2ProgComplete = 4,
     //not a RFC-defined state, used for stream 0 frames applying to the global connection
-    HTTP2StateGlobal = 8,
-    //not a RFC-defined state, dropping this old tx because we have too many
-    HTTP2StateTodrop = 9,
+    HTTP2ProgGlobal = 5,
 }
 
 #[derive(Debug)]
@@ -164,7 +161,9 @@ pub struct DohHttp2Tx {
 pub struct HTTP2Transaction {
     tx_id: u64,
     pub stream_id: u32,
-    pub state: HTTP2TransactionState,
+    pub progress_tc: HTTP2TxProgress,
+    pub progress_ts: HTTP2TxProgress,
+    to_drop: bool,
     child_stream_id: u32,
 
     pub frames_tc: Vec<HTTP2Frame>,
@@ -201,7 +200,9 @@ impl HTTP2Transaction {
             tx_id: 0,
             stream_id: 0,
             child_stream_id: 0,
-            state: HTTP2TransactionState::HTTP2StateIdle,
+            progress_tc: HTTP2TxProgress::HTTP2ProgStart,
+            progress_ts: HTTP2TxProgress::HTTP2ProgStart,
+            to_drop: false,
             frames_tc: Vec::new(),
             frames_ts: Vec::new(),
             decoder: decompression::HTTP2Decoder::new(),
@@ -406,7 +407,9 @@ impl HTTP2Transaction {
                     if header.flags & parser::HTTP2_FLAG_HEADER_END_HEADERS == 0 {
                         self.child_stream_id = hs.stream_id;
                     }
-                    self.state = HTTP2TransactionState::HTTP2StateReserved;
+                    if self.progress_tc < HTTP2TxProgress::HTTP2ProgHeaders {
+                        self.progress_tc = HTTP2TxProgress::HTTP2ProgHeaders;
+                    }
                 }
                 r = self.handle_headers(&hs.blocks, dir);
             }
@@ -430,41 +433,30 @@ impl HTTP2Transaction {
             _ => {}
         }
         //handle closing state changes
+        let state = if dir == Direction::ToServer {
+            &mut self.progress_ts
+        } else {
+            &mut self.progress_tc
+        };
         match data {
             HTTP2FrameTypeData::HEADERS(_) | HTTP2FrameTypeData::DATA => {
                 if header.flags & parser::HTTP2_FLAG_HEADER_EOS != 0 {
-                    match self.state {
-                        HTTP2TransactionState::HTTP2StateHalfClosedClient
-                        | HTTP2TransactionState::HTTP2StateDataServer => {
-                            if dir == Direction::ToClient {
-                                self.state = HTTP2TransactionState::HTTP2StateClosed;
-                            }
-                        }
-                        HTTP2TransactionState::HTTP2StateHalfClosedServer => {
-                            if dir == Direction::ToServer {
-                                self.state = HTTP2TransactionState::HTTP2StateClosed;
-                            }
-                        }
-                        // do not revert back to a half closed state
-                        HTTP2TransactionState::HTTP2StateClosed => {}
-                        HTTP2TransactionState::HTTP2StateGlobal => {}
-                        _ => {
-                            if dir == Direction::ToClient {
-                                self.state = HTTP2TransactionState::HTTP2StateHalfClosedServer;
-                            } else {
-                                self.state = HTTP2TransactionState::HTTP2StateHalfClosedClient;
-                            }
+                    if *state < HTTP2TxProgress::HTTP2ProgClosed {
+                        *state = HTTP2TxProgress::HTTP2ProgClosed;
+                        if self.progress_ts == HTTP2TxProgress::HTTP2ProgClosed
+                            && self.progress_tc == HTTP2TxProgress::HTTP2ProgClosed
+                        {
+                            self.progress_ts = HTTP2TxProgress::HTTP2ProgComplete;
+                            self.progress_tc = HTTP2TxProgress::HTTP2ProgComplete;
                         }
                     }
                 } else if header.ftype == parser::HTTP2FrameType::Data as u8 {
                     //not end of stream
-                    if dir == Direction::ToServer {
-                        if self.state < HTTP2TransactionState::HTTP2StateDataClient {
-                            self.state = HTTP2TransactionState::HTTP2StateDataClient;
-                        }
-                    } else if self.state < HTTP2TransactionState::HTTP2StateDataServer {
-                        self.state = HTTP2TransactionState::HTTP2StateDataServer;
+                    if *state < HTTP2TxProgress::HTTP2ProgData {
+                        *state = HTTP2TxProgress::HTTP2ProgData;
                     }
+                } else if *state < HTTP2TxProgress::HTTP2ProgHeaders {
+                    *state = HTTP2TxProgress::HTTP2ProgHeaders;
                 }
             }
             _ => {}
@@ -493,6 +485,41 @@ impl HTTP2Transaction {
                     }
                 }
             }
+        }
+    }
+
+    fn handle_data_frame(
+        &mut self, rem: &[u8], hlsafe: usize, dir: Direction, flow: *mut Flow, padded: bool,
+        over: bool,
+    ) {
+        match unsafe { SURICATA_HTTP2_FILE_CONFIG } {
+            Some(sfcm) => {
+                if dir == Direction::ToServer {
+                    self.ft_tc.tx_id = self.tx_id - 1;
+                } else {
+                    self.ft_ts.tx_id = self.tx_id - 1;
+                };
+                let mut dinput = &rem[..hlsafe];
+                if padded && !rem.is_empty() && usize::from(rem[0]) < hlsafe {
+                    dinput = &rem[1..hlsafe - usize::from(rem[0])];
+                }
+                let mut output = Vec::with_capacity(decompression::HTTP2_DECOMPRESSION_CHUNK_SIZE);
+                match self.decompress(dinput, &mut output, dir, sfcm, over, flow) {
+                    Ok(_) => {
+                        if over {
+                            self.handle_dns_data(dir, flow);
+                        }
+                    }
+                    Err(e) => {
+                        if e.kind() == io::ErrorKind::OutOfMemory {
+                            self.set_event(HTTP2Event::CompressionBomb);
+                        } else {
+                            self.set_event(HTTP2Event::FailedDecompression);
+                        }
+                    }
+                }
+            }
+            None => panic!("no SURICATA_HTTP2_FILE_CONFIG"),
         }
     }
 }
@@ -529,6 +556,7 @@ pub enum HTTP2Event {
     DnsResponseTooLong,
     DataStreamZero,
     TooManyFrames,
+    CompressionBomb,
 }
 
 pub struct HTTP2DynTable {
@@ -571,6 +599,9 @@ pub struct HTTP2State {
     transactions: VecDeque<HTTP2Transaction>,
     progress: HTTP2ConnectionState,
 
+    comp_len: u64,
+    decomp_len: u64,
+
     c2s_buf: HTTP2HeaderReassemblyBuffer,
     s2c_buf: HTTP2HeaderReassemblyBuffer,
 }
@@ -605,6 +636,8 @@ impl HTTP2State {
             dynamic_headers_tc: HTTP2DynTable::new(),
             transactions: VecDeque::new(),
             progress: HTTP2ConnectionState::Http2StateInit,
+            comp_len: 0,
+            decomp_len: 0,
             c2s_buf: HTTP2HeaderReassemblyBuffer::default(),
             s2c_buf: HTTP2HeaderReassemblyBuffer::default(),
         }
@@ -714,13 +747,15 @@ impl HTTP2State {
         return sid;
     }
 
-    fn create_global_tx(&mut self) -> &mut HTTP2Transaction {
+    fn create_global_tx(&mut self, dir: Direction) -> &mut HTTP2Transaction {
         //special transaction with only one frame
         //as it affects the global connection, there is no end to it
         let mut tx = HTTP2Transaction::new();
+        tx.tx_data = AppLayerTxData::for_direction(dir);
         self.tx_id += 1;
         tx.tx_id = self.tx_id;
-        tx.state = HTTP2TransactionState::HTTP2StateGlobal;
+        tx.progress_tc = HTTP2TxProgress::HTTP2ProgGlobal;
+        tx.progress_ts = HTTP2TxProgress::HTTP2ProgGlobal;
         // a global tx (stream id 0) does not hold files cf RFC 9113 section 5.1.1
         self.transactions.push_back(tx);
         return self.transactions.back_mut().unwrap();
@@ -732,19 +767,21 @@ impl HTTP2State {
         if header.stream_id == 0 {
             if self.transactions.len() >= unsafe { HTTP2_MAX_STREAMS } {
                 for tx_old in &mut self.transactions {
-                    if tx_old.state == HTTP2TransactionState::HTTP2StateTodrop {
+                    if tx_old.to_drop {
                         // loop was already run
                         break;
                     }
                     tx_old.set_event(HTTP2Event::TooManyStreams);
                     // use a distinct state, even if we do not log it
-                    tx_old.state = HTTP2TransactionState::HTTP2StateTodrop;
+                    tx_old.progress_ts = HTTP2TxProgress::HTTP2ProgComplete;
+                    tx_old.progress_tc = HTTP2TxProgress::HTTP2ProgComplete;
+                    tx_old.to_drop = true;
                     tx_old.tx_data.0.updated_tc = true;
                     tx_old.tx_data.0.updated_ts = true;
                 }
                 return None;
             }
-            return Some(self.create_global_tx());
+            return Some(self.create_global_tx(dir));
         }
         let sid = match data {
             //yes, the right stream_id for Suricata is not the header one
@@ -761,7 +798,9 @@ impl HTTP2State {
         };
         let index = self.find_tx_index(sid);
         if index > 0 {
-            if self.transactions[index - 1].state == HTTP2TransactionState::HTTP2StateClosed {
+            if self.transactions[index - 1].progress_tc >= HTTP2TxProgress::HTTP2ProgClosed
+                && self.transactions[index - 1].progress_ts >= HTTP2TxProgress::HTTP2ProgClosed
+            {
                 //these frames can be received in this state for a short period
                 if header.ftype != parser::HTTP2FrameType::RstStream as u8
                     && header.ftype != parser::HTTP2FrameType::WindowUpdate as u8
@@ -781,13 +820,15 @@ impl HTTP2State {
             // do not use SETTINGS_MAX_CONCURRENT_STREAMS as it can grow too much
             if self.transactions.len() >= unsafe { HTTP2_MAX_STREAMS } {
                 for tx_old in &mut self.transactions {
-                    if tx_old.state == HTTP2TransactionState::HTTP2StateTodrop {
+                    if tx_old.to_drop {
                         // loop was already run
                         break;
                     }
                     tx_old.set_event(HTTP2Event::TooManyStreams);
                     // use a distinct state, even if we do not log it
-                    tx_old.state = HTTP2TransactionState::HTTP2StateTodrop;
+                    tx_old.progress_ts = HTTP2TxProgress::HTTP2ProgComplete;
+                    tx_old.progress_tc = HTTP2TxProgress::HTTP2ProgComplete;
+                    tx_old.to_drop = true;
                     tx_old.tx_data.0.updated_tc = true;
                     tx_old.tx_data.0.updated_ts = true;
                 }
@@ -797,7 +838,6 @@ impl HTTP2State {
             self.tx_id += 1;
             tx.tx_id = self.tx_id;
             tx.stream_id = sid;
-            tx.state = HTTP2TransactionState::HTTP2StateOpen;
             tx.tx_data.update_file_flags(self.state_data.file_flags);
             tx.update_file_flags(tx.tx_data.0.file_flags);
             tx.tx_data.0.file_tx = STREAM_TOSERVER | STREAM_TOCLIENT; // might hold files in both directions
@@ -1202,6 +1242,7 @@ impl HTTP2State {
                         &mut reass_limit_reached,
                     );
 
+                    let (comp_len, decomp_len) = (self.comp_len, self.decomp_len);
                     let tx = self.find_or_create_tx(&head, &txdata, dir);
                     if tx.is_none() {
                         return AppLayerResult::err();
@@ -1257,44 +1298,28 @@ impl HTTP2State {
                     if ftype == parser::HTTP2FrameType::Data as u8 && sid == 0 {
                         tx.tx_data.set_event(HTTP2Event::DataStreamZero as u8);
                     } else if ftype == parser::HTTP2FrameType::Data as u8 && sid > 0 {
-                        match unsafe { SURICATA_HTTP2_FILE_CONFIG } {
-                            Some(sfcm) => {
-                                //borrow checker forbids to reuse directly tx
-                                let index = self.find_tx_index(sid);
-                                if index > 0 {
-                                    let tx_same = &mut self.transactions[index - 1];
-                                    if dir == Direction::ToServer {
-                                        tx_same.ft_tc.tx_id = tx_same.tx_id - 1;
-                                    } else {
-                                        tx_same.ft_ts.tx_id = tx_same.tx_id - 1;
-                                    };
-                                    let mut dinput = &rem[..hlsafe];
-                                    if padded && !rem.is_empty() && usize::from(rem[0]) < hlsafe {
-                                        dinput = &rem[1..hlsafe - usize::from(rem[0])];
-                                    }
-                                    let mut output = Vec::with_capacity(
-                                        decompression::HTTP2_DECOMPRESSION_CHUNK_SIZE,
-                                    );
-                                    match tx_same.decompress(
-                                        dinput,
-                                        &mut output,
-                                        dir,
-                                        sfcm,
-                                        over,
-                                        flow,
-                                    ) {
-                                        Ok(_) => {
-                                            if over {
-                                                tx_same.handle_dns_data(dir, flow);
-                                            }
-                                        }
-                                        _ => {
-                                            self.set_event(HTTP2Event::FailedDecompression);
-                                        }
-                                    }
-                                }
+                        tx.handle_data_frame(rem, hlsafe, dir, flow, padded, over);
+                        let (il, ol) = if dir == Direction::ToClient {
+                            (
+                                tx.decoder.decoder_tc.input_len,
+                                tx.decoder.decoder_tc.output_len,
+                            )
+                        } else {
+                            (
+                                tx.decoder.decoder_ts.input_len,
+                                tx.decoder.decoder_ts.output_len,
+                            )
+                        };
+                        let (il, ol) = (il + comp_len, ol + decomp_len);
+                        if ol > decompression::DEFAULT_BOMB_RATIO * il {
+                            if ol > unsafe { HTTP2_COMPRESSION_BOMB_LIMIT } {
+                                tx.set_event(HTTP2Event::CompressionBomb);
+                                return AppLayerResult::err();
                             }
-                            None => panic!("no SURICATA_HTTP2_FILE_CONFIG"),
+                            if over {
+                                self.comp_len += il;
+                                self.decomp_len += ol;
+                            }
                         }
                     }
                     sc_app_layer_parser_trigger_raw_stream_inspection(flow, dir as i32);
@@ -1441,13 +1466,12 @@ unsafe extern "C" fn http2_probing_parser_tc(
 // is typically not unsafe.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 extern "C" fn http2_state_new(
-    orig_state: *mut std::os::raw::c_void, _orig_proto: AppProto,
+    orig_state: *mut std::os::raw::c_void, orig_proto: AppProto,
 ) -> *mut std::os::raw::c_void {
     let state = HTTP2State::new();
     let boxed = Box::new(state);
     let r = Box::into_raw(boxed) as *mut _;
-    if !orig_state.is_null() {
-        //we could check ALPROTO_HTTP1 == orig_proto
+    if !orig_state.is_null() && orig_proto == ALPROTO_HTTP1 as u16 {
         unsafe {
             SCHTTP2MimicHttp1Request(orig_state, r);
         }
@@ -1500,15 +1524,15 @@ unsafe extern "C" fn http2_state_get_tx_count(state: *mut std::os::raw::c_void) 
     return state.tx_id;
 }
 
-unsafe extern "C" fn http2_tx_get_state(tx: *mut std::os::raw::c_void) -> HTTP2TransactionState {
-    let tx = cast_pointer!(tx, HTTP2Transaction);
-    return tx.state;
-}
-
 unsafe extern "C" fn http2_tx_get_alstate_progress(
-    tx: *mut std::os::raw::c_void, _direction: u8,
+    tx: *mut std::os::raw::c_void, direction: u8,
 ) -> std::os::raw::c_int {
-    return http2_tx_get_state(tx) as i32;
+    let tx = cast_pointer!(tx, HTTP2Transaction);
+    if direction == STREAM_TOSERVER {
+        return tx.progress_ts as i32;
+    } else {
+        return tx.progress_tc as i32;
+    }
 }
 
 unsafe extern "C" fn http2_getfiles(
@@ -1552,8 +1576,8 @@ pub unsafe extern "C" fn SCRegisterHttp2Parser() {
         parse_tc: http2_parse_tc,
         get_tx_count: http2_state_get_tx_count,
         get_tx: http2_state_get_tx,
-        tx_comp_st_ts: HTTP2TransactionState::HTTP2StateClosed as i32,
-        tx_comp_st_tc: HTTP2TransactionState::HTTP2StateClosed as i32,
+        tx_comp_st_ts: HTTP2TxProgress::HTTP2ProgComplete as i32,
+        tx_comp_st_tc: HTTP2TxProgress::HTTP2ProgComplete as i32,
         tx_get_progress: http2_tx_get_alstate_progress,
         get_eventinfo: Some(HTTP2Event::get_event_info),
         get_eventinfo_byid: Some(HTTP2Event::get_event_info_by_id),
@@ -1605,6 +1629,13 @@ pub unsafe extern "C" fn SCRegisterHttp2Parser() {
                 HTTP2_MAX_REASS = v as usize;
             } else {
                 SCLogError!("Invalid value for http2.max-reassembly-size");
+            }
+        }
+        if let Some(val) = conf_get("app-layer.protocols.http2.compression-bomb-limit") {
+            if let Ok(v) = get_memval(val) {
+                HTTP2_COMPRESSION_BOMB_LIMIT = v;
+            } else {
+                SCLogWarning!("Invalid value for http2.compression-bomb-limit");
             }
         }
         SCAppLayerParserRegisterLogger(IPPROTO_TCP, ALPROTO_HTTP2);

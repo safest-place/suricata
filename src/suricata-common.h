@@ -45,8 +45,16 @@ extern "C"
 /* clang analyzer acts as DEBUG_VALIDATION in some places, so
  * force this so #ifdef DEBUG_VALIDATION code gets included */
 #define DEBUG_VALIDATION 1
+
+    /* function prototype to be used to filter taints. To be used
+     * through the DEBUG_VALIDATE_MARK_SANITIZED macro. The scan-build
+     * taint config will then consider this in the taint analysis. */
+    void ScanBuildMarkSanitized(const void *);
 #endif
 
+#if CPPCHECK == 1
+#define __has_feature(x) 0
+#endif
 #if defined(__has_feature)
 #if __has_feature(address_sanitizer)
 #define SC_ADDRESS_SANITIZER 1
@@ -478,7 +486,6 @@ typedef enum LoggerId {
     LOGGER_UNDEFINED,
 
     /* TX loggers first for low logger IDs */
-    LOGGER_HTTP,
     LOGGER_TLS_STORE,
     LOGGER_TLS_STORE_CLIENT,
     LOGGER_TLS,
