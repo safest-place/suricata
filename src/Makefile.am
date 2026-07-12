@@ -242,10 +242,6 @@ noinst_HEADERS = \
 	detect-isdataat.h \
 	detect-itype.h \
 	detect-ja4-hash.h \
-	detect-krb5-cname.h \
-	detect-krb5-errcode.h \
-	detect-krb5-sname.h \
-	detect-krb5-ticket-encryption.h \
 	detect-l3proto.h \
 	detect-lua-extensions.h \
 	detect-lua.h \
@@ -823,10 +819,6 @@ libsuricata_c_a_SOURCES = \
 	detect-isdataat.c \
 	detect-itype.c \
 	detect-ja4-hash.c \
-	detect-krb5-cname.c \
-	detect-krb5-errcode.c \
-	detect-krb5-sname.c \
-	detect-krb5-ticket-encryption.c \
 	detect-l3proto.c \
 	detect-lua-extensions.c \
 	detect-lua.c \
